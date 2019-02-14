@@ -1,0 +1,107 @@
+initialize() {
+	initializeSLiMModelType("nonWF");
+	initializeSLiMOptions(dimensionality="xy", periodicity="xy");
+
+	defineConstant("Rd", 1000); // desired rat density per km^2
+	defineConstant("A", 10); // island area (km^2)
+	defineConstant("M", 1/(sqrt(A)*1000)); // 1 meter
+	defineConstant("N", A*Rd); // desired total population size
+	defineConstant("H", 25*M); // home range (m)
+	defineConstant("dI", H*3); // Max Interaction Distance
+
+	defineConstant("dAvg", 30*M); // juvenile dispersal mean distance
+	defineConstant("dMax", 2000*M); // juvenile dispersal mean distance
+
+	//defineConstant("m", 0.00142857); // Density dependance tuning parameter 
+	defineConstant("m", 0.0007); // Density dependance tuning parameter 
+	defineConstant("I", 0.1); // initialization area edge length (fraction of total arena)
+	defineConstant("N0", I*I*N); // Initial population size
+	defineConstant("Ps", 0.9); // probability of survival w/o competition
+	defineConstant("L", 4); // litter size
+
+	initializeMutationType("m1", 0.5, "f", 0.0);
+	initializeGenomicElementType("g1", m1, 1.0);
+	initializeGenomicElement(g1, 0, 10);
+	initializeMutationRate(0);
+	initializeRecombinationRate(0);
+
+	// spatial competition
+	initializeInteractionType(1, "xy", reciprocal=T, maxDistance= dI);
+	i1.setInteractionFunction("n", 1.0, H);
+
+	// spatial mate choice
+	initializeInteractionType(2, "xy", reciprocal=T, maxDistance= dI);
+}
+
+reproduction(NULL) {
+	if(individual.tag == 0){
+		individual.tag = 1;
+		neighbors = i2.nearestNeighbors(individual, p1.individualCount);
+		neighbors = neighbors[neighbors.tag == 0];
+
+		if(size(neighbors)){
+			mate = sample(neighbors, 1);
+			while(mate.tag == 1) {
+				mate = sample(neighbors, 1);
+			}
+			mate.tag = 1;
+			litterSize = rpois(1, L);
+			for (j in seqLen(litterSize)) {
+				subpop.addCrossed(individual, mate);
+			}
+		}
+	}
+}
+
+1 early() {
+	sim.addSubpop("p1", asInteger(N0));
+	// random initial positions
+	for (ind in p1.individuals) {
+		x = 0.5-(I/2)+runif(1,0,I);
+		y = 0.5-(I/2)+runif(1,0,I);
+		ind.setSpatialPosition(c(x,y));
+	}
+	cat('#N: ');
+	catn(p1.individualCount);
+	cat("#Position: ");
+	catn(p1.individuals.spatialPosition);
+	cat("#Age: ");
+	catn(p1.individuals.age);
+}
+
+early() {
+	i1.evaluate();
+	inds = p1.individuals;
+	competition = i1.totalOfNeighborStrengths(inds);
+	rel_den = ((competition/(PI*(3*H/(M*1000))^2)));
+	sol = Ps - rel_den*m;
+	sol[sol<0] = 0;
+	inds.fitnessScaling = sol;
+}
+
+late()
+{
+	cat('#N: ');
+	catn(p1.individualCount);
+	/*cat("#Position: ");
+	catn(p1.individuals.spatialPosition);
+	cat("#Age: ");
+	catn(p1.individuals.age);*/
+	i2.evaluate();
+	if(p1.individualCount == 0) {
+		sim.simulationFinished();
+	}
+	p1.individuals.tag = 0;
+}
+
+modifyChild() {
+	r = min(rexp(1, dAvg), dMax);
+	theta = runif(1, 0, 2*PI);
+	pos = parent1.spatialPosition + c(r*cos(theta), r*sin(theta));
+	child.setSpatialPosition(p1.pointPeriodic(pos));
+	return T;
+}
+
+1000 late() {
+	sim.simulationFinished();
+}
